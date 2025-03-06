@@ -1,4 +1,4 @@
-# Rustop
+# rustop
 
 A lightweight, terminal-based system monitor for macOS written in Rust.
 
