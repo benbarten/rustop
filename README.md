@@ -2,7 +2,8 @@
 
 A lightweight, terminal-based system monitor for macOS written in Rust.
 
-![Rustop Screenshot](https://via.placeholder.com/800x400?text=Rustop+Screenshot)
+<img width="403" alt="image" src="https://github.com/user-attachments/assets/20733310-f295-465a-8d3c-1da7abbfd454" />
+
 
 ## Overview
 
