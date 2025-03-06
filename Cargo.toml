@@ -1,0 +1,10 @@
+[package]
+name = "rustop"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+libproc = "0.14"  # macOS process management
+sysinfo = "0.30"  # Cross-platform system info
+crossterm = "0.28.1"
+signal-hook = "0.3.17"
