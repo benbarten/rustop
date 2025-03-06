@@ -17,6 +17,12 @@ Rustop is a terminal-based process viewer and system monitor inspired by the cla
 - Clean terminal UI with color-coded output
 - Automatic sorting by CPU usage
 - Responsive terminal display
+- Customizable refresh rate
+- Sorting by CPU usage, memory usage, or PID
+- Filtering processes by name or user
+- Option to hide kernel processes
+- Human-readable memory format
+- Non-interactive mode for scripting
 
 ## Requirements
 
@@ -42,21 +48,37 @@ The compiled binary will be available at `target/release/rustop`.
 
 ## Usage
 
-Run the application:
-
 ```bash
-./target/release/rustop
+# Basic usage
+cargo run --release
+
+# Show help
+cargo run --release -- --help
+
+# Sort by memory usage
+cargo run --release -- --sort-by memory
+
+# Show only top 10 processes
+cargo run --release -- --top 10
+
+# Filter processes by name (case-insensitive)
+cargo run --release -- --filter chrome
+
+# Show only processes owned by a specific user
+cargo run --release -- --user yourusername
+
+# Hide kernel processes
+cargo run --release -- --no-kernel
+
+# Display memory in human-readable format
+cargo run --release -- --human-readable
+
+# Run once and exit (non-interactive mode)
+cargo run --release -- --once
+
+# Combine multiple options
+cargo run --release -- --sort-by memory --top 5 --human-readable --refresh-rate 2.5
 ```
-
-Or, if you've installed it:
-
-```bash
-rustop
-```
-
-### Controls
-
-- Press `Ctrl+C` to exit the application
 
 ## How It Works
 
@@ -87,4 +109,19 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ## Acknowledgments
 
 - Inspired by the Unix `top` command
-- Built with Rust and its amazing ecosystem 
+- Built with Rust and its amazing ecosystem
+
+## Command-line Arguments
+
+| Argument | Short | Description |
+|----------|-------|-------------|
+| `--sort-by` | `-s` | Sort processes by CPU usage, memory usage, or PID (default: cpu) |
+| `--refresh-rate` | `-r` | Refresh rate in seconds (default: 1.0) |
+| `--top` | `-t` | Show only the top N processes |
+| `--filter` | `-f` | Filter processes by name (case-insensitive) |
+| `--user` | `-u` | Show only processes owned by the specified user |
+| `--no-kernel` | `-k` | Hide kernel processes |
+| `--human-readable` | `-H` | Display memory in human-readable format (KB, MB, GB) |
+| `--once` | `-o` | Run once and exit (non-interactive mode) |
+| `--help` | `-h` | Show help message |
+| `--version` | | Show version information | 
