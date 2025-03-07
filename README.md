@@ -122,6 +122,5 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 | `--user` | `-u` | Show only processes owned by the specified user |
 | `--no-kernel` | `-k` | Hide kernel processes |
 | `--human-readable` | `-H` | Display memory in human-readable format (KB, MB, GB) |
-| `--once` | `-o` | Run once and exit (non-interactive mode) |
 | `--help` | `-h` | Show help message |
 | `--version` | | Show version information | 

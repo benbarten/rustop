@@ -1,3 +1,4 @@
+use clap::{Parser, ValueEnum};
 use crossterm::{
     cursor::{self, Hide, Show},
     execute,
@@ -9,13 +10,12 @@ use libproc::libproc::proc_pid::name;
 use libproc::processes;
 use std::{cmp::Ordering, io::Error, sync::atomic, thread, time::Duration};
 use std::{collections::HashMap, sync::Arc};
+use std::{io::ErrorKind, panic};
 use std::{
     io::{Stdout, Write, stdout},
     sync::atomic::AtomicBool,
 };
 use sysinfo::System;
-use clap::{Parser, ValueEnum};
-use std::panic;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, ValueEnum)]
 enum SortBy {
@@ -43,18 +43,14 @@ struct Args {
     #[arg(short, long)]
     filter: Option<String>,
 
-    /// Run once and exit (non-interactive mode)
-    #[arg(short, long)]
-    once: bool,
-    
     /// Show only processes owned by the specified user
     #[arg(short = 'u', long)]
     user: Option<String>,
-    
+
     /// Hide kernel processes
     #[arg(short = 'k', long)]
     no_kernel: bool,
-    
+
     /// Display memory in human-readable format (KB, MB, GB)
     #[arg(short = 'H', long)]
     human_readable: bool,
@@ -121,11 +117,11 @@ fn format_memory(bytes: u64, human_readable: bool) -> String {
     if !human_readable {
         return format!("{}", bytes / 1_000_000); // Default: MB
     }
-    
+
     const KB: u64 = 1_000;
     const MB: u64 = 1_000_000;
     const GB: u64 = 1_000_000_000;
-    
+
     if bytes >= GB {
         format!("{:.2} GB", bytes as f64 / GB as f64)
     } else if bytes >= MB {
@@ -144,7 +140,11 @@ fn print(stdout: &mut Stdout, stats: Vec<UsageInfo>, args: &Args) {
         None => (rows as usize).saturating_sub(2), // Reserve 2 lines for header
     };
 
-    let mem_header = if args.human_readable { "Memory" } else { "Memory (MB)" };
+    let mem_header = if args.human_readable {
+        "Memory"
+    } else {
+        "Memory (MB)"
+    };
 
     execute!(
         stdout,
@@ -191,7 +191,13 @@ fn cleanup_terminal(stdout: &mut Stdout) -> Result<(), Box<dyn std::error::Error
 
 fn main() -> Result<(), Error> {
     let args = Args::parse();
-    
+    if args.refresh_rate < 1.0 {
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
+            "Refresh rate must be at least 1 second",
+        ));
+    }
+
     // Set up panic hook to ensure terminal is restored on panic
     let default_hook = panic::take_hook();
     panic::set_hook(Box::new(move |panic_info| {
@@ -199,11 +205,11 @@ fn main() -> Result<(), Error> {
         let _ = execute!(stdout, Show, LeaveAlternateScreen);
         default_hook(panic_info);
     }));
-    
+
     let term = Arc::new(AtomicBool::new(false));
     signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&term))?;
     signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&term))?;
-    
+
     // Set up a cleanup handler for signals
     let cleanup_on_signal = std::thread::spawn({
         let term = Arc::clone(&term);
@@ -221,18 +227,14 @@ fn main() -> Result<(), Error> {
     let num_cpus = sys.cpus().len() as f64;
 
     let mut stdout = stdout();
-    
-    if !args.once {
-        let _ = setup_terminal(&mut stdout);
-    }
+
+    let _ = setup_terminal(&mut stdout);
 
     loop {
         let sample = sample();
-        
-        if !args.once {
-            thread::sleep(Duration::from_secs_f64(args.refresh_rate));
-        }
-        
+
+        thread::sleep(Duration::from_secs_f64(args.refresh_rate));
+
         let mut stats = stats(num_cpus, sample);
 
         // Apply filter if specified
@@ -240,13 +242,13 @@ fn main() -> Result<(), Error> {
             let filter_lower = filter.to_lowercase();
             stats.retain(|stat| stat.name.to_lowercase().contains(&filter_lower));
         }
-        
+
         // Filter by user if specified
         if let Some(user) = &args.user {
             let user_lower = user.to_lowercase();
-            
+
             sys.refresh_processes();
-            
+
             stats.retain(|stat| {
                 if let Some(process) = sys.process(sysinfo::Pid::from_u32(stat.pid)) {
                     // Get the user ID if available
@@ -257,7 +259,7 @@ fn main() -> Result<(), Error> {
                 false
             });
         }
-        
+
         // Hide kernel processes if requested
         if args.no_kernel {
             // On macOS, kernel processes typically have PIDs < 100
@@ -266,7 +268,7 @@ fn main() -> Result<(), Error> {
             stats.retain(|stat| {
                 // Refresh system info to get process details
                 sys.refresh_process(sysinfo::Pid::from_u32(stat.pid));
-                
+
                 if let Some(process) = sys.process(sysinfo::Pid::from_u32(stat.pid)) {
                     // Check if it's a kernel process (simplified approach)
                     return !process.name().starts_with("kernel") && stat.pid >= 100;
@@ -277,28 +279,24 @@ fn main() -> Result<(), Error> {
 
         // Sort based on the specified criteria
         match args.sort_by {
-            SortBy::Cpu => stats.sort_by(|a, b| b.cpu.partial_cmp(&a.cpu).unwrap_or(Ordering::Less)),
+            SortBy::Cpu => {
+                stats.sort_by(|a, b| b.cpu.partial_cmp(&a.cpu).unwrap_or(Ordering::Less))
+            }
             SortBy::Memory => stats.sort_by(|a, b| b.mem.cmp(&a.mem)),
             SortBy::Pid => stats.sort_by(|a, b| a.pid.cmp(&b.pid)),
         }
 
         print(&mut stdout, stats, &args);
-        
-        if args.once {
-            break;
-        }
-        
+
         sys.refresh_all();
-        
+
         if term.load(atomic::Ordering::Relaxed) {
             break;
         }
     }
 
-    if !args.once {
-        let _ = cleanup_terminal(&mut stdout);
-    }
-    
+    let _ = cleanup_terminal(&mut stdout);
+
     // Set the termination flag to true and wait for the cleanup thread to finish
     term.store(true, atomic::Ordering::Relaxed);
     let _ = cleanup_on_signal.join();
