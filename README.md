@@ -22,7 +22,6 @@ Rustop is a terminal-based process viewer and system monitor inspired by the cla
 - Filtering processes by name or user
 - Option to hide kernel processes
 - Human-readable memory format
-- Non-interactive mode for scripting
 - Configuration file support (TOML)
 
 ## Requirements
