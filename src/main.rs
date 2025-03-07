@@ -16,8 +16,12 @@ use std::{
     sync::atomic::AtomicBool,
 };
 use sysinfo::System;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, ValueEnum)]
+mod config;
+use config::Config;
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, ValueEnum, Serialize, Deserialize)]
 enum SortBy {
     Cpu,
     Memory,
@@ -54,6 +58,10 @@ struct Args {
     /// Display memory in human-readable format (KB, MB, GB)
     #[arg(short = 'H', long)]
     human_readable: bool,
+
+    /// Generate a config file with current settings
+    #[arg(short = 'g', long)]
+    generate_config: bool,
 }
 
 struct UsageInfo {
@@ -190,7 +198,93 @@ fn cleanup_terminal(stdout: &mut Stdout) -> Result<(), Box<dyn std::error::Error
 }
 
 fn main() -> Result<(), Error> {
-    let args = Args::parse();
+    // Load configuration from file
+    let config = Config::load().unwrap_or_else(|e| {
+        eprintln!("Warning: Failed to load config file: {}", e);
+        Config::default()
+    });
+
+    // Parse command line arguments
+    let mut args = Args::parse();
+
+    // Merge config with command line args (command line takes precedence)
+    if let Some(sort_by) = config.sort_by {
+        if !std::env::args().any(|arg| arg == "-s" || arg == "--sort-by") {
+            args.sort_by = sort_by;
+        }
+    }
+
+    if let Some(refresh_rate) = config.refresh_rate {
+        if !std::env::args().any(|arg| arg == "-r" || arg == "--refresh-rate") {
+            args.refresh_rate = refresh_rate;
+        }
+    }
+
+    if let Some(top) = config.top {
+        if !std::env::args().any(|arg| arg == "-t" || arg == "--top") {
+            args.top = Some(top);
+        }
+    }
+
+    if let Some(filter) = config.filter {
+        if !std::env::args().any(|arg| arg == "-f" || arg == "--filter") {
+            args.filter = Some(filter);
+        }
+    }
+
+    if let Some(user) = config.user {
+        if !std::env::args().any(|arg| arg == "-u" || arg == "--user") {
+            args.user = Some(user);
+        }
+    }
+
+    if let Some(no_kernel) = config.no_kernel {
+        if !std::env::args().any(|arg| arg == "-k" || arg == "--no-kernel") {
+            args.no_kernel = no_kernel;
+        }
+    }
+
+    if let Some(human_readable) = config.human_readable {
+        if !std::env::args().any(|arg| arg == "-H" || arg == "--human-readable") {
+            args.human_readable = human_readable;
+        }
+    }
+
+    // Create default config file if it doesn't exist
+    if let Err(e) = config::ensure_config_file_exists() {
+        eprintln!("Warning: Failed to create default config file: {}", e);
+    }
+
+    // Handle generate_config flag
+    if args.generate_config {
+        let config_to_save = Config {
+            sort_by: Some(args.sort_by),
+            refresh_rate: Some(args.refresh_rate),
+            top: args.top,
+            filter: args.filter.clone(),
+            user: args.user.clone(),
+            no_kernel: Some(args.no_kernel),
+            human_readable: Some(args.human_readable),
+        };
+        
+        match config_to_save.save() {
+            Ok(()) => {
+                if let Some(path) = config::get_config_path() {
+                    println!("Configuration saved to: {:?}", path);
+                } else {
+                    println!("Configuration saved successfully.");
+                }
+                return Ok(());
+            }
+            Err(e) => {
+                return Err(Error::new(
+                    ErrorKind::Other,
+                    format!("Failed to save configuration: {}", e),
+                ));
+            }
+        }
+    }
+
     if args.refresh_rate < 1.0 {
         return Err(Error::new(
             ErrorKind::InvalidInput,

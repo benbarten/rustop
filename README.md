@@ -23,6 +23,7 @@ Rustop is a terminal-based process viewer and system monitor inspired by the cla
 - Option to hide kernel processes
 - Human-readable memory format
 - Non-interactive mode for scripting
+- Configuration file support (TOML)
 
 ## Requirements
 
@@ -122,5 +123,55 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 | `--user` | `-u` | Show only processes owned by the specified user |
 | `--no-kernel` | `-k` | Hide kernel processes |
 | `--human-readable` | `-H` | Display memory in human-readable format (KB, MB, GB) |
+| `--generate-config` | `-g` | Generate a config file with current settings |
 | `--help` | `-h` | Show help message |
-| `--version` | | Show version information | 
+| `--version` | | Show version information |
+
+## Configuration File
+
+Rustop supports a configuration file to persist your preferred settings. The configuration file is stored at:
+
+`~/.rustop/config.toml`
+
+Where `~` is your home directory.
+
+### Creating a Configuration File
+
+You can generate a configuration file with your current settings using the `--generate-config` flag:
+
+```bash
+rustop --sort-by memory --human-readable --generate-config
+```
+
+This will create a configuration file with your current settings that will be used for future runs.
+
+### Configuration File Format
+
+The configuration file uses TOML format. Here's an example:
+
+```toml
+# Rustop configuration file
+
+# Sort processes by CPU usage, memory usage, or PID
+sort_by = "Memory"
+
+# Refresh rate in seconds
+refresh_rate = 2.0
+
+# Show only the top N processes
+top = 10
+
+# Filter processes by name (case-insensitive)
+filter = "chrome"
+
+# Show only processes owned by the specified user
+user = "yourusername"
+
+# Hide kernel processes
+no_kernel = true
+
+# Display memory in human-readable format (KB, MB, GB)
+human_readable = true
+```
+
+Command-line arguments take precedence over configuration file settings.
