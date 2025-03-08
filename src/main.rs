@@ -17,6 +17,7 @@ use std::{
 };
 use sysinfo::System;
 use serde::{Deserialize, Serialize};
+use chrono;
 
 mod config;
 use config::Config;
@@ -26,12 +27,13 @@ enum SortBy {
     Cpu,
     Memory,
     Pid,
+    StartTime,
 }
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "A simple top-like process viewer written in Rust", long_about = None)]
 struct Args {
-    /// Sort processes by CPU usage, memory usage, or PID
+    /// Sort processes by CPU usage, memory usage, PID, or start time
     #[arg(short, long, value_enum, default_value_t = SortBy::Cpu)]
     sort_by: SortBy,
 
@@ -62,6 +64,22 @@ struct Args {
     /// Generate a config file with current settings
     #[arg(short = 'g', long)]
     generate_config: bool,
+    
+    /// Filter processes with CPU usage above this threshold (%)
+    #[arg(long)]
+    cpu_above: Option<f64>,
+    
+    /// Filter processes with CPU usage below this threshold (%)
+    #[arg(long)]
+    cpu_below: Option<f64>,
+    
+    /// Filter processes with memory usage above this threshold (MB or in bytes if not human-readable)
+    #[arg(long)]
+    mem_above: Option<u64>,
+    
+    /// Filter processes with memory usage below this threshold (MB or in bytes if not human-readable)
+    #[arg(long)]
+    mem_below: Option<u64>,
 }
 
 struct UsageInfo {
@@ -69,16 +87,25 @@ struct UsageInfo {
     name: String,
     cpu: f64,
     mem: u64,
+    start_time: u64,
 }
 
 fn sample() -> (HashMap<u32, UsageInfo>, f64) {
     let uptime = System::uptime() as f64;
     let processes_by_type = processes::pids_by_type(processes::ProcFilter::All);
     let mut first_sample = HashMap::new();
+    let mut sys = System::new_all();
+    sys.refresh_all();
 
     if let Ok(ref pids) = processes_by_type {
         for pid in pids.iter() {
             let proc_name = name(*pid as i32).unwrap_or_else(|_| "Unknown".to_string());
+            let mut start_time = 0;
+            
+            // Get process start time using sysinfo
+            if let Some(process) = sys.process(sysinfo::Pid::from_u32(*pid)) {
+                start_time = process.start_time();
+            }
 
             if let Ok(usage) = pidrusage::<RUsageInfoV2>(*pid as i32) {
                 let cpu_time = (usage.ri_system_time + usage.ri_user_time) as f64 / 1_000_000.0;
@@ -89,6 +116,7 @@ fn sample() -> (HashMap<u32, UsageInfo>, f64) {
                         name: proc_name,
                         cpu: cpu_time,
                         mem: usage.ri_resident_size,
+                        start_time,
                     },
                 );
             }
@@ -113,6 +141,7 @@ fn stats(num_cpus: f64, sample: (HashMap<u32, UsageInfo>, f64)) -> Vec<UsageInfo
                 name: info.name.clone(),
                 cpu: cpu_usage,
                 mem: usage.ri_resident_size,
+                start_time: info.start_time,
             });
         }
     }
@@ -141,6 +170,14 @@ fn format_memory(bytes: u64, human_readable: bool) -> String {
     }
 }
 
+/// Format timestamp into a human-readable format (HH:MM:SS)
+fn format_time(timestamp: u64) -> String {
+    let datetime = chrono::DateTime::from_timestamp(timestamp as i64, 0)
+        .unwrap_or_else(|| chrono::DateTime::from_timestamp(0, 0).unwrap());
+    
+    datetime.format("%H:%M:%S").to_string()
+}
+
 fn print(stdout: &mut Stdout, stats: Vec<UsageInfo>, args: &Args) {
     let (_, rows) = size().unwrap_or((0, 0));
     let lines_to_print = match args.top {
@@ -149,9 +186,9 @@ fn print(stdout: &mut Stdout, stats: Vec<UsageInfo>, args: &Args) {
     };
 
     let mem_header = if args.human_readable {
-        "Memory"
+        "MEMORY"
     } else {
-        "Memory (MB)"
+        "MEMORY (MB)"
     };
 
     execute!(
@@ -161,8 +198,8 @@ fn print(stdout: &mut Stdout, stats: Vec<UsageInfo>, args: &Args) {
         SetForegroundColor(Color::Green),
         Print("\r\n"),
         Print(format!(
-            "{:<6} {:<25} {:>10} {:>12}\n",
-            "PID", "COMMAND", "CPU (%)", mem_header
+            "{:<6} {:<20} {:>8} {:>12} {:>10}\n",
+            "PID", "COMMAND", "CPU (%)", mem_header, "START TIME"
         )),
         ResetColor
     )
@@ -173,11 +210,12 @@ fn print(stdout: &mut Stdout, stats: Vec<UsageInfo>, args: &Args) {
             stdout,
             SetForegroundColor(Color::DarkYellow),
             Print(format!(
-                "\r{:<6} {:<25} {:>9.2}% {:>12}\n",
+                "\r{:<6} {:<20} {:>8.2}% {:>12} {:>10}\n",
                 stat.pid,
-                &stat.name.chars().take(25).collect::<String>(), // Trim long process names
+                &stat.name.chars().take(20).collect::<String>(), // Trim long process names
                 stat.cpu,
                 format_memory(stat.mem, args.human_readable),
+                format_time(stat.start_time),
             )),
             ResetColor
         )
@@ -249,6 +287,31 @@ fn main() -> Result<(), Error> {
             args.human_readable = human_readable;
         }
     }
+    
+    // Handle new configuration options
+    if let Some(cpu_above) = config.cpu_above {
+        if !std::env::args().any(|arg| arg == "--cpu-above") {
+            args.cpu_above = Some(cpu_above);
+        }
+    }
+    
+    if let Some(cpu_below) = config.cpu_below {
+        if !std::env::args().any(|arg| arg == "--cpu-below") {
+            args.cpu_below = Some(cpu_below);
+        }
+    }
+    
+    if let Some(mem_above) = config.mem_above {
+        if !std::env::args().any(|arg| arg == "--mem-above") {
+            args.mem_above = Some(mem_above);
+        }
+    }
+    
+    if let Some(mem_below) = config.mem_below {
+        if !std::env::args().any(|arg| arg == "--mem-below") {
+            args.mem_below = Some(mem_below);
+        }
+    }
 
     // Create default config file if it doesn't exist
     if let Err(e) = config::ensure_config_file_exists() {
@@ -265,6 +328,10 @@ fn main() -> Result<(), Error> {
             user: args.user.clone(),
             no_kernel: Some(args.no_kernel),
             human_readable: Some(args.human_readable),
+            cpu_above: args.cpu_above,
+            cpu_below: args.cpu_below,
+            mem_above: args.mem_above,
+            mem_below: args.mem_below,
         };
         
         match config_to_save.save() {
@@ -330,46 +397,129 @@ fn main() -> Result<(), Error> {
         thread::sleep(Duration::from_secs_f64(args.refresh_rate));
 
         let mut stats = stats(num_cpus, sample);
+        
+        // Refresh system info before applying filters
+        sys.refresh_all();
 
-        // Apply filter if specified
-        if let Some(filter) = &args.filter {
-            let filter_lower = filter.to_lowercase();
-            stats.retain(|stat| stat.name.to_lowercase().contains(&filter_lower));
-        }
-
-        // Filter by user if specified
-        if let Some(user) = &args.user {
-            let user_lower = user.to_lowercase();
-
-            sys.refresh_processes();
-
-            stats.retain(|stat| {
-                if let Some(process) = sys.process(sysinfo::Pid::from_u32(stat.pid)) {
-                    // Get the user ID if available
-                    if let Some(uid) = process.user_id() {
-                        return uid.to_string().contains(&user_lower);
+        // Apply all filters using functional programming patterns
+        let filters: Vec<Box<dyn Fn(&UsageInfo) -> bool>> = vec![
+            // Filter by name if specified
+            Box::new({
+                let filter_opt = args.filter.clone();
+                move |stat: &UsageInfo| -> bool {
+                    if let Some(filter) = &filter_opt {
+                        let filter_lower = filter.to_lowercase();
+                        stat.name.to_lowercase().contains(&filter_lower)
+                    } else {
+                        true
                     }
                 }
-                false
-            });
-        }
-
-        // Hide kernel processes if requested
-        if args.no_kernel {
-            // On macOS, kernel processes typically have PIDs < 100
-            // This is a simplified approach - in a real implementation, you'd want to use
-            // a more reliable method to identify kernel processes
-            stats.retain(|stat| {
-                // Refresh system info to get process details
-                sys.refresh_process(sysinfo::Pid::from_u32(stat.pid));
-
-                if let Some(process) = sys.process(sysinfo::Pid::from_u32(stat.pid)) {
-                    // Check if it's a kernel process (simplified approach)
-                    return !process.name().starts_with("kernel") && stat.pid >= 100;
+            }),
+            
+            // Filter by user if specified
+            Box::new({
+                let user_opt = args.user.clone();
+                // Create a closure that captures system info by value
+                move |stat: &UsageInfo| -> bool {
+                    if let Some(user) = &user_opt {
+                        let user_lower = user.to_lowercase();
+                        // Create a temporary System instance for this check
+                        let mut temp_sys = System::new_with_specifics(
+                            sysinfo::RefreshKind::new().with_processes(sysinfo::ProcessRefreshKind::new())
+                        );
+                        temp_sys.refresh_process(sysinfo::Pid::from_u32(stat.pid));
+                        
+                        if let Some(process) = temp_sys.process(sysinfo::Pid::from_u32(stat.pid)) {
+                            if let Some(uid) = process.user_id() {
+                                uid.to_string().contains(&user_lower)
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        }
+                    } else {
+                        true
+                    }
                 }
-                true
-            });
-        }
+            }),
+            
+            // Hide kernel processes if requested
+            Box::new({
+                let no_kernel = args.no_kernel;
+                move |stat: &UsageInfo| -> bool {
+                    if no_kernel {
+                        // Create a temporary System instance for this check
+                        let mut temp_sys = System::new_with_specifics(
+                            sysinfo::RefreshKind::new().with_processes(sysinfo::ProcessRefreshKind::new())
+                        );
+                        temp_sys.refresh_process(sysinfo::Pid::from_u32(stat.pid));
+                        
+                        if let Some(process) = temp_sys.process(sysinfo::Pid::from_u32(stat.pid)) {
+                            !process.name().starts_with("kernel") && stat.pid >= 100
+                        } else {
+                            true
+                        }
+                    } else {
+                        true
+                    }
+                }
+            }),
+            
+            // Filter by CPU threshold if specified
+            Box::new({
+                let cpu_above = args.cpu_above;
+                let cpu_below = args.cpu_below;
+                move |stat: &UsageInfo| -> bool {
+                    let above_check = if let Some(threshold) = cpu_above {
+                        stat.cpu > threshold
+                    } else {
+                        true
+                    };
+                    
+                    let below_check = if let Some(threshold) = cpu_below {
+                        stat.cpu < threshold
+                    } else {
+                        true
+                    };
+                    
+                    above_check && below_check
+                }
+            }),
+            
+            // Filter by memory threshold if specified
+            Box::new({
+                let mem_above = args.mem_above;
+                let mem_below = args.mem_below;
+                let human_readable = args.human_readable;
+                move |stat: &UsageInfo| -> bool {
+                    let above_check = if let Some(threshold) = mem_above {
+                        if human_readable {
+                            stat.mem > threshold
+                        } else {
+                            stat.mem > threshold * 1_000_000
+                        }
+                    } else {
+                        true
+                    };
+                    
+                    let below_check = if let Some(threshold) = mem_below {
+                        if human_readable {
+                            stat.mem < threshold
+                        } else {
+                            stat.mem < threshold * 1_000_000
+                        }
+                    } else {
+                        true
+                    };
+                    
+                    above_check && below_check
+                }
+            }),
+        ];
+        
+        // Apply all filters
+        stats.retain(|stat| filters.iter().all(|filter| filter(stat)));
 
         // Sort based on the specified criteria
         match args.sort_by {
@@ -378,11 +528,10 @@ fn main() -> Result<(), Error> {
             }
             SortBy::Memory => stats.sort_by(|a, b| b.mem.cmp(&a.mem)),
             SortBy::Pid => stats.sort_by(|a, b| a.pid.cmp(&b.pid)),
+            SortBy::StartTime => stats.sort_by(|a, b| a.start_time.cmp(&b.start_time)),
         }
 
         print(&mut stdout, stats, &args);
-
-        sys.refresh_all();
 
         if term.load(atomic::Ordering::Relaxed) {
             break;

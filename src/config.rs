@@ -28,6 +28,18 @@ pub struct Config {
     
     /// Display memory in human-readable format (KB, MB, GB)
     pub human_readable: Option<bool>,
+    
+    /// Filter processes with CPU usage above this threshold (%)
+    pub cpu_above: Option<f64>,
+    
+    /// Filter processes with CPU usage below this threshold (%)
+    pub cpu_below: Option<f64>,
+    
+    /// Filter processes with memory usage above this threshold (MB or in bytes if not human-readable)
+    pub mem_above: Option<u64>,
+    
+    /// Filter processes with memory usage below this threshold (MB or in bytes if not human-readable)
+    pub mem_below: Option<u64>,
 }
 
 impl Default for Config {
@@ -40,6 +52,10 @@ impl Default for Config {
             user: None,
             no_kernel: None,
             human_readable: None,
+            cpu_above: None,
+            cpu_below: None,
+            mem_above: None,
+            mem_below: None,
         }
     }
 }

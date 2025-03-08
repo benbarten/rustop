@@ -13,3 +13,4 @@ serde = { version = "1.0", features = ["derive"] }  # Serialization/deserializat
 toml = "0.8"  # TOML parsing
 directories = "5.0"  # Finding config directories
 dirs = "5.0"  # Home directory detection
+chrono = "0.4"  # Date and time handling
