@@ -198,7 +198,7 @@ fn print(stdout: &mut Stdout, stats: Vec<UsageInfo>, args: &Args) {
         SetForegroundColor(Color::Green),
         Print("\r\n"),
         Print(format!(
-            "{:<6} {:<20} {:>8} {:>12} {:>10}\n",
+            "{:<6} {:<20} {:>10} {:>12} {:>10}\n",
             "PID", "COMMAND", "CPU (%)", mem_header, "START TIME"
         )),
         ResetColor
@@ -210,10 +210,10 @@ fn print(stdout: &mut Stdout, stats: Vec<UsageInfo>, args: &Args) {
             stdout,
             SetForegroundColor(Color::DarkYellow),
             Print(format!(
-                "\r{:<6} {:<20} {:>8.2}% {:>12} {:>10}\n",
+                "\r{:<6} {:<20} {:>10} {:>12} {:>10}\n",
                 stat.pid,
                 &stat.name.chars().take(20).collect::<String>(), // Trim long process names
-                stat.cpu,
+                format!("{:.2}%", stat.cpu),
                 format_memory(stat.mem, args.human_readable),
                 format_time(stat.start_time),
             )),
